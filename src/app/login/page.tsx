@@ -22,6 +22,7 @@ export default function LoginPage() {
   const [nhostEmail, setNhostEmail] = useState("");
   const [nhostPassword, setNhostPassword] = useState("");
   const [nhostBusy, setNhostBusy] = useState(false);
+  const [nhostMode, setNhostMode] = useState<"signin" | "signup">("signin");
 
   useEffect(() => {
     void fetch("/api/auth/mode")
@@ -84,7 +85,54 @@ export default function LoginPage() {
     }
   }
 
-  async function handleNhostLogin(e: React.FormEvent) {
+  async function completeNhostSession(accessToken: string, user: {
+    id: string;
+    email?: string | null;
+    displayName?: string | null;
+  }) {
+    // Server verifies JWT and provisions Organization A owner if the user
+    // has no org_members row yet (idempotent; never trusts client user ids).
+    const me = await fetch("/api/auth/me", {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    const meJson = (await me.json()) as {
+      user?: { id?: string };
+      memberships?: { org_id: string; role: string }[];
+      message?: string;
+    };
+    if (!me.ok) {
+      if (me.status === 401) {
+        throw new Error(
+          "Nhost token was issued but is not accepted by this app JWT config. For RS256 Nhost projects set NHOST_JWT_JWKS_URL (or rely on subdomain/region auto JWKS) or NHOST_JWT_PUBLIC_KEY — do not use HASURA_JWT_SECRET (HS256) for asymmetric keys."
+        );
+      }
+      throw new Error(
+        meJson.message ||
+          "Signed in, but organization membership could not be provisioned. Try again or contact the project owner."
+      );
+    }
+    if (meJson.user?.id && meJson.user.id !== user.id) {
+      throw new Error("Token subject does not match Nhost user id");
+    }
+    if (!meJson.memberships?.length) {
+      throw new Error(
+        "Signed in, but no organization membership is available. Provisioning may have failed."
+      );
+    }
+
+    login({
+      accessToken,
+      authProvider: "nhost",
+      user: {
+        id: user.id,
+        email: user.email || nhostEmail,
+        displayName: user.displayName || user.email || "Nhost user",
+      },
+    });
+    router.replace("/dashboard");
+  }
+
+  async function handleNhostAuth(e: React.FormEvent) {
     e.preventDefault();
     if (modeInfo && modeInfo.mode !== "nhost" && !modeInfo.nhostConfigured) {
       setError("Nhost is not configured.");
@@ -94,13 +142,25 @@ export default function LoginPage() {
     setError(null);
     try {
       const nhost = getNhostClient();
-      const response = await nhost.auth.signInEmailPassword({
-        email: nhostEmail,
-        password: nhostPassword,
-      });
+      const response =
+        nhostMode === "signup"
+          ? await nhost.auth.signUpEmailPassword({
+              email: nhostEmail,
+              password: nhostPassword,
+            })
+          : await nhost.auth.signInEmailPassword({
+              email: nhostEmail,
+              password: nhostPassword,
+            });
+
       const accessToken = response.body?.session?.accessToken;
       const user = response.body?.session?.user;
       if (!accessToken || !user?.id) {
+        if (nhostMode === "signup") {
+          throw new Error(
+            "Sign-up succeeded but no session was returned. If email verification is required, confirm your email, then sign in — membership is provisioned on first authenticated /api/auth/me call."
+          );
+        }
         throw new Error(
           response.body
             ? "Nhost sign-in failed — check email/password"
@@ -108,32 +168,15 @@ export default function LoginPage() {
         );
       }
 
-      // Confirm Hasura will see the same user id from the JWT claims.
-      const me = await fetch("/api/auth/me", {
-        headers: { Authorization: `Bearer ${accessToken}` },
-      });
-      if (!me.ok) {
-        throw new Error(
-          "Nhost token was issued but is not accepted by this app JWT config. For RS256 Nhost projects set NHOST_JWT_JWKS_URL (or rely on subdomain/region auto JWKS) or NHOST_JWT_PUBLIC_KEY — do not use HASURA_JWT_SECRET (HS256) for asymmetric keys."
-        );
-      }
-      const meJson = (await me.json()) as { user?: { id?: string } };
-      if (meJson.user?.id && meJson.user.id !== user.id) {
-        throw new Error("Token subject does not match Nhost user id");
-      }
-
-      login({
-        accessToken,
-        authProvider: "nhost",
-        user: {
-          id: user.id,
-          email: user.email || nhostEmail,
-          displayName: user.displayName || user.email || "Nhost user",
-        },
-      });
-      router.replace("/dashboard");
+      await completeNhostSession(accessToken, user);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Nhost login failed");
+      setError(
+        err instanceof Error
+          ? err.message
+          : nhostMode === "signup"
+            ? "Nhost sign-up failed"
+            : "Nhost login failed"
+      );
     } finally {
       setNhostBusy(false);
     }
@@ -199,13 +242,37 @@ export default function LoginPage() {
         {showNhost ? (
           <form
             className="nhost-form"
-            onSubmit={(e) => void handleNhostLogin(e)}
+            onSubmit={(e) => void handleNhostAuth(e)}
           >
             <h2 className="section-title">Nhost email / password</h2>
             <p className="muted">
-              Production path: Nhost Auth issues the JWT; Hasura and Actions
-              authorize with that user id.
+              Production path: Nhost Auth issues the JWT. On first authenticated
+              session, the server provisions Organization A membership (role{" "}
+              <code>owner</code>) for your real Nhost user id via{" "}
+              <code>/api/auth/me</code>.
             </p>
+            <div className="login-grid" style={{ marginBottom: "0.75rem" }}>
+              <button
+                type="button"
+                className={
+                  nhostMode === "signin" ? "btn btn-primary" : "btn btn-ghost"
+                }
+                onClick={() => setNhostMode("signin")}
+                disabled={nhostBusy}
+              >
+                Sign in
+              </button>
+              <button
+                type="button"
+                className={
+                  nhostMode === "signup" ? "btn btn-primary" : "btn btn-ghost"
+                }
+                onClick={() => setNhostMode("signup")}
+                disabled={nhostBusy}
+              >
+                Sign up
+              </button>
+            </div>
             <label>
               Email
               <input
@@ -223,7 +290,9 @@ export default function LoginPage() {
                 value={nhostPassword}
                 onChange={(e) => setNhostPassword(e.target.value)}
                 required
-                autoComplete="current-password"
+                autoComplete={
+                  nhostMode === "signup" ? "new-password" : "current-password"
+                }
               />
             </label>
             <button
@@ -231,7 +300,13 @@ export default function LoginPage() {
               className="btn btn-primary"
               disabled={nhostBusy}
             >
-              {nhostBusy ? "Signing in…" : "Sign in with Nhost"}
+              {nhostBusy
+                ? nhostMode === "signup"
+                  ? "Creating account…"
+                  : "Signing in…"
+                : nhostMode === "signup"
+                  ? "Create evaluator account"
+                  : "Sign in with Nhost"}
             </button>
           </form>
         ) : null}

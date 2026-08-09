@@ -181,16 +181,23 @@ Behavior:
 
 **Production force:** If `VERCEL_ENV=production` (or `FORCE_NHOST_AUTH=true`) **and** Nhost subdomain/region are set, demo mode is forced off even if `AUTH_MODE=demo` was left in env. Override only with `ALLOW_DEMO_AUTH=true` for exceptional local testing.
 
-### Mapping Nhost users into organizations
+### Evaluator signup flow (automatic org membership)
 
-After a real user signs up in Nhost, insert membership rows with **that** user’s UUID:
+New Nhost accounts are provisioned automatically — **no manual SQL**:
 
-```sql
-INSERT INTO org_members (org_id, user_id, role)
-VALUES ('11111111-1111-1111-1111-111111111111', '<nhost-user-uuid>', 'editor');
-```
+1. Open `/login` → **Sign up** with email/password (Nhost Auth).
+2. If email verification is enabled in Nhost, confirm the email, then **Sign in**.
+3. The app calls `GET /api/auth/me` with the Bearer access token.
+4. The server verifies the JWT, reads the subject (`x-hasura-user-id` / `sub`), and if the user has **zero** `org_members` rows, inserts:
 
-Seeded demo UUIDs work only with demo JWTs.
+   - `org_id = 11111111-1111-1111-1111-111111111111` (Organization A)
+   - `user_id = <verified Nhost UUID>`
+   - `role = owner`
+
+5. Insert is idempotent (`ON CONFLICT DO NOTHING`); existing memberships / roles are never overwritten.
+6. Dashboard loads Organization A via Hasura RLS for that JWT user id.
+
+Demo personas (Alice…Frank) keep their seeded memberships and are unchanged. Seeded demo UUIDs work only with demo JWTs.
 
 ### Probe endpoints
 
