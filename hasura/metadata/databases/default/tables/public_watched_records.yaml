@@ -1,0 +1,92 @@
+table:
+  name: watched_records
+  schema: public
+object_relationships:
+  - name: organization
+    using:
+      foreign_key_constraint_on: org_id
+select_permissions:
+  - role: user
+    permission:
+      columns:
+        - id
+        - org_id
+        - title
+        - payload
+        - created_at
+        - updated_at
+      filter:
+        organization:
+          members:
+            user_id:
+              _eq: X-Hasura-User-Id
+insert_permissions:
+  - role: user
+    permission:
+      check:
+        organization:
+          members:
+            _and:
+              - user_id:
+                  _eq: X-Hasura-User-Id
+              - role:
+                  _in:
+                    - owner
+                    - editor
+      columns:
+        - org_id
+        - title
+        - payload
+update_permissions:
+  - role: user
+    permission:
+      columns:
+        - title
+        - payload
+      filter:
+        organization:
+          members:
+            _and:
+              - user_id:
+                  _eq: X-Hasura-User-Id
+              - role:
+                  _in:
+                    - owner
+                    - editor
+      check:
+        organization:
+          members:
+            _and:
+              - user_id:
+                  _eq: X-Hasura-User-Id
+              - role:
+                  _in:
+                    - owner
+                    - editor
+delete_permissions:
+  - role: user
+    permission:
+      filter:
+        organization:
+          members:
+            _and:
+              - user_id:
+                  _eq: X-Hasura-User-Id
+              - role:
+                  _eq: owner
+event_triggers:
+  - name: watched_records_database_event
+    definition:
+      enable_manual: false
+      insert:
+        columns: '*'
+      update:
+        columns: '*'
+    retry_conf:
+      num_retries: 3
+      interval_sec: 10
+      timeout_sec: 60
+    webhook: '{{ACTION_BASE_URL}}/api/events/database-event'
+    headers:
+      - name: X-Hasura-Event-Secret
+        value_from_env: HASURA_EVENT_SECRET

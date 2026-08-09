@@ -1,0 +1,28 @@
+table:
+  name: organization_monthly_usage
+  schema: public
+object_relationships:
+  - name: organization
+    using:
+      manual_configuration:
+        remote_table:
+          name: organizations
+          schema: public
+        column_mapping:
+          organization_id: id
+select_permissions:
+  - role: user
+    permission:
+      columns:
+        - organization_id
+        - organization_name
+        - current_month_calls_used
+        - allowed_calls
+        - remaining_calls
+        - usage_percentage
+        - quota_period_start
+      filter:
+        organization:
+          members:
+            user_id:
+              _eq: X-Hasura-User-Id

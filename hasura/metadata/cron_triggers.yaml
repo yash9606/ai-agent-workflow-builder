@@ -1,0 +1,14 @@
+- name: scheduled_workflow_tick
+  webhook: '{{ACTION_BASE_URL}}/api/events/scheduled'
+  schedule: '*/1 * * * *'
+  include_in_metadata: true
+  payload: {}
+  retry_conf:
+    num_retries: 3
+    timeout_seconds: 60
+    tolerance_seconds: 21600
+    retry_interval_seconds: 10
+  headers:
+    - name: X-Cron-Secret
+      value_from_env: CRON_SECRET
+  comment: Poll Next.js for due scheduled workflow triggers every minute

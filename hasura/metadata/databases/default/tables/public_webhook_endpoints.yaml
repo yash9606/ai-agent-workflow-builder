@@ -1,0 +1,82 @@
+table:
+  name: webhook_endpoints
+  schema: public
+object_relationships:
+  - name: workflow
+    using:
+      foreign_key_constraint_on: workflow_id
+  - name: trigger
+    using:
+      foreign_key_constraint_on: trigger_id
+select_permissions:
+  - role: user
+    permission:
+      # secret intentionally omitted from SELECT — never expose to the browser.
+      columns:
+        - id
+        - workflow_id
+        - trigger_id
+        - path_token
+        - created_at
+      filter:
+        workflow:
+          organization:
+            members:
+              _and:
+                - user_id:
+                    _eq: X-Hasura-User-Id
+                - role:
+                    _eq: owner
+insert_permissions:
+  - role: user
+    permission:
+      check:
+        workflow:
+          organization:
+            members:
+              _and:
+                - user_id:
+                    _eq: X-Hasura-User-Id
+                - role:
+                    _eq: owner
+      columns:
+        - workflow_id
+        - trigger_id
+        - secret
+        - path_token
+update_permissions:
+  - role: user
+    permission:
+      columns:
+        - secret
+        - path_token
+      filter:
+        workflow:
+          organization:
+            members:
+              _and:
+                - user_id:
+                    _eq: X-Hasura-User-Id
+                - role:
+                    _eq: owner
+      check:
+        workflow:
+          organization:
+            members:
+              _and:
+                - user_id:
+                    _eq: X-Hasura-User-Id
+                - role:
+                    _eq: owner
+delete_permissions:
+  - role: user
+    permission:
+      filter:
+        workflow:
+          organization:
+            members:
+              _and:
+                - user_id:
+                    _eq: X-Hasura-User-Id
+                - role:
+                    _eq: owner

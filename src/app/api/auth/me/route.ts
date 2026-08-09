@@ -1,0 +1,54 @@
+import { extractBearerToken } from "@/lib/auth/request-auth";
+import { verifyHasuraJwt } from "@/lib/auth/jwt";
+import { query } from "@/lib/db";
+import { AppError, jsonError } from "@/lib/errors";
+
+export const runtime = "nodejs";
+
+/**
+ * Returns identity from the verified JWT — never from the request body.
+ * Also lists org memberships for that user_id (authorization source of truth).
+ */
+export async function GET(req: Request) {
+  try {
+    const token = extractBearerToken(req);
+    if (!token) {
+      throw new AppError("UNAUTHORIZED", "Authentication required", 401);
+    }
+
+    const claims = await verifyHasuraJwt(token);
+
+    const memberships = await query<{
+      org_id: string;
+      role: string;
+      org_name: string;
+    }>(
+      `SELECT m.org_id, m.role, o.name AS org_name
+       FROM org_members m
+       INNER JOIN organizations o ON o.id = m.org_id
+       WHERE m.user_id = $1
+       ORDER BY o.name ASC`,
+      [claims.userId]
+    );
+
+    return Response.json({
+      user: {
+        id: claims.userId,
+        email: claims.email ?? null,
+        defaultRole: claims.defaultRole,
+      },
+      memberships: memberships.rows,
+      /**
+       * Hasura RLS and Actions resolve access via org_members.user_id =
+       * JWT x-hasura-user-id (this id). Frontend persona/org selection cannot
+       * change that binding.
+       */
+      authorization: {
+        subjectClaim: "x-hasura-user-id",
+        matchedVia: "org_members.user_id",
+      },
+    });
+  } catch (error) {
+    return jsonError(error);
+  }
+}

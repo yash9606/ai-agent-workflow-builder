@@ -1,0 +1,117 @@
+table:
+  name: workflow_triggers
+  schema: public
+object_relationships:
+  - name: workflow
+    using:
+      foreign_key_constraint_on: workflow_id
+array_relationships:
+  - name: webhook_endpoints
+    using:
+      foreign_key_constraint_on:
+        column: trigger_id
+        table:
+          name: webhook_endpoints
+          schema: public
+select_permissions:
+  - role: user
+    permission:
+      columns:
+        - id
+        - workflow_id
+        - trigger_type
+        - config
+        - enabled
+        - created_at
+      filter:
+        workflow:
+          organization:
+            members:
+              user_id:
+                _eq: X-Hasura-User-Id
+insert_permissions:
+  - role: user
+    permission:
+      check:
+        _and:
+          - workflow:
+              organization:
+                members:
+                  _and:
+                    - user_id:
+                        _eq: X-Hasura-User-Id
+                    - role:
+                        _in:
+                          - owner
+                          - editor
+          - _or:
+              - trigger_type:
+                  _nin:
+                    - webhook
+              - workflow:
+                  organization:
+                    members:
+                      _and:
+                        - user_id:
+                            _eq: X-Hasura-User-Id
+                        - role:
+                            _eq: owner
+      columns:
+        - workflow_id
+        - trigger_type
+        - config
+        - enabled
+update_permissions:
+  - role: user
+    permission:
+      columns:
+        - trigger_type
+        - config
+        - enabled
+      filter:
+        workflow:
+          organization:
+            members:
+              _and:
+                - user_id:
+                    _eq: X-Hasura-User-Id
+                - role:
+                    _in:
+                      - owner
+                      - editor
+      check:
+        _and:
+          - workflow:
+              organization:
+                members:
+                  _and:
+                    - user_id:
+                        _eq: X-Hasura-User-Id
+                    - role:
+                        _in:
+                          - owner
+                          - editor
+          - _or:
+              - trigger_type:
+                  _nin:
+                    - webhook
+              - workflow:
+                  organization:
+                    members:
+                      _and:
+                        - user_id:
+                            _eq: X-Hasura-User-Id
+                        - role:
+                            _eq: owner
+delete_permissions:
+  - role: user
+    permission:
+      filter:
+        workflow:
+          organization:
+            members:
+              _and:
+                - user_id:
+                    _eq: X-Hasura-User-Id
+                - role:
+                    _eq: owner

@@ -1,0 +1,59 @@
+# Local development stack for AI Agent Workflow Builder.
+# Note: a Node service is NOT needed here — Next.js runs on the host (port 3000).
+# Hasura actions/events call the host via ACTION_BASE_URL → host.docker.internal:3000.
+
+services:
+  postgres:
+    image: postgres:15
+    restart: unless-stopped
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: workflow_builder
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d workflow_builder"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  graphql-engine:
+    # cli-migrations-v3 auto-applies ./hasura/migrations + ./hasura/metadata on startup
+    image: hasura/graphql-engine:v2.36.0.cli-migrations-v3
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      HASURA_GRAPHQL_DATABASE_URL: postgres://postgres:postgres@postgres:5432/workflow_builder
+      HASURA_GRAPHQL_ADMIN_SECRET: hasura-admin-secret
+      HASURA_GRAPHQL_JWT_SECRET: '{"type":"HS256","key":"local-jwt-secret-at-least-32-characters-long!!"}'
+      HASURA_GRAPHQL_UNAUTHORIZED_ROLE: anonymous
+      HASURA_GRAPHQL_ENABLE_CONSOLE: "true"
+      HASURA_GRAPHQL_DEV_MODE: "true"
+      HASURA_GRAPHQL_ENABLED_LOG_TYPES: startup, http-log, webhook-log, websocket-log, query-log
+      HASURA_GRAPHQL_MIGRATIONS_DIR: /hasura-migrations
+      HASURA_GRAPHQL_METADATA_DIR: /hasura-metadata
+      ACTION_BASE_URL: http://host.docker.internal:3000
+      CRON_SECRET: local-cron-secret
+      ACTION_SHARED_SECRET: local-action-secret
+      HASURA_EVENT_SECRET: local-event-secret
+    volumes:
+      - ./hasura/migrations:/hasura-migrations
+      - ./hasura/metadata:/hasura-metadata
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8080/healthz || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 15
+      start_period: 40s
+
+volumes:
+  postgres_data:

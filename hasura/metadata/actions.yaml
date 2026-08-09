@@ -1,0 +1,63 @@
+actions:
+  - name: triggerWorkflowRun
+    definition:
+      kind: synchronous
+      handler: '{{ACTION_BASE_URL}}/api/actions/trigger-workflow'
+      forward_client_headers: true
+      timeout: 60
+      headers:
+        - name: X-Hasura-Action-Secret
+          value_from_env: ACTION_SHARED_SECRET
+    permissions:
+      - role: user
+    comment: Start a workflow run for an authorized org member
+  - name: approveStep
+    definition:
+      kind: synchronous
+      handler: '{{ACTION_BASE_URL}}/api/actions/approve-step'
+      forward_client_headers: true
+      timeout: 60
+      headers:
+        - name: X-Hasura-Action-Secret
+          value_from_env: ACTION_SHARED_SECRET
+    permissions:
+      - role: user
+    comment: Approve a paused approval_gate step run
+  - name: triggerWorkflowWebhook
+    definition:
+      kind: synchronous
+      handler: '{{ACTION_BASE_URL}}/api/actions/trigger-webhook'
+      forward_client_headers: true
+      timeout: 60
+      headers:
+        - name: X-Hasura-Action-Secret
+          value_from_env: ACTION_SHARED_SECRET
+    permissions:
+      - role: anonymous
+      - role: user
+    comment: Trigger a workflow via webhook path token
+custom_types:
+  enums: []
+  input_objects: []
+  objects:
+    - name: TriggerWorkflowRunOutput
+      fields:
+        - name: id
+          type: uuid!
+        - name: status
+          type: String!
+        - name: workflow_id
+          type: uuid!
+        - name: message
+          type: String!
+    - name: ApproveStepOutput
+      fields:
+        - name: id
+          type: uuid!
+        - name: status
+          type: String!
+        - name: workflow_id
+          type: uuid!
+        - name: message
+          type: String!
+  scalars: []

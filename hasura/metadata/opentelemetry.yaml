@@ -1,0 +1,5 @@
+status: disabled
+data_types: []
+exporterporter_otlp: {}
+batch_span_processor:
+  max_export_batch_size: 512
