@@ -20,7 +20,7 @@ Stack layout:
 
 | Layer | Responsibility |
 | --- | --- |
-| Next.js (App Router) | UI + API routes (Hasura Actions, events, webhooks, demo login) |
+| Next.js (App Router) | UI + API routes (Hasura Actions, events, webhooks,  login) |
 | Hasura | GraphQL API, permissions, Actions, Event Triggers, cron |
 | PostgreSQL | Schema, seed data, `consume_org_quota` |
 | Executor (`src/lib/executor`) | Authoritative run/step state, retries, LLM/HTTP/notify |
@@ -142,8 +142,8 @@ Authorization is **never** based on a frontend-selected persona name or org pick
 **Default for local development.** Does not require Nhost.
 
 ```env
-AUTH_MODE=demo
-DEMO_AUTH_PASSWORD=demo-password
+AUTH_MODE=yashwanth9519@gmail.com
+DEMO_AUTH_PASSWORD=Yashwanth@2004
 HASURA_JWT_SECRET=local-jwt-secret-at-least-32-characters-long!!
 ```
 
