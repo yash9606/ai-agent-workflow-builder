@@ -119,39 +119,107 @@ export function mapNhostAuthError(
   );
 }
 
+async function sleep(ms: number): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function isTransientNhostFetchError(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  const message = error.message.toLowerCase();
+  if (
+    message.includes("fetch failed") ||
+    message.includes("failed to fetch") ||
+    message.includes("network") ||
+    message.includes("timeout") ||
+    message.includes("econnreset") ||
+    message.includes("econnrefused") ||
+    message.includes("etimedout") ||
+    message.includes("socket")
+  ) {
+    return true;
+  }
+  const cause = (error as Error & { cause?: unknown }).cause;
+  if (cause instanceof Error) {
+    const causeMsg = `${cause.name} ${cause.message}`.toLowerCase();
+    return (
+      causeMsg.includes("timeout") ||
+      causeMsg.includes("econnreset") ||
+      causeMsg.includes("econnrefused") ||
+      causeMsg.includes("etimedout") ||
+      causeMsg.includes("socket") ||
+      causeMsg.includes("network")
+    );
+  }
+  return false;
+}
+
+function publicNhostNetworkDetail(error: unknown): string {
+  if (!(error instanceof Error) || !error.message.trim()) {
+    return "temporary network error";
+  }
+  const message = error.message.trim();
+  // Node undici often surfaces the opaque "fetch failed" — keep UI actionable.
+  if (/^fetch failed$/i.test(message) || /^failed to fetch$/i.test(message)) {
+    return "temporary network error";
+  }
+  if (message.length > 120 || /token|bearer|jwt|secret/i.test(message)) {
+    return "temporary network error";
+  }
+  return message;
+}
+
 async function callNhostAuth(
   path: "/signup/email-password" | "/signin/email-password",
   email: string,
   password: string
 ): Promise<{ status: number; body: NhostSessionBody }> {
   const url = `${nhostAuthBaseUrl()}${path}`;
-  let res: Response;
-  try {
-    res = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Accept: "application/json" },
-      body: JSON.stringify({ email, password }),
-      cache: "no-store",
-    });
-  } catch (error) {
-    const detail =
-      error instanceof Error && error.message && error.message !== "Failed to fetch"
-        ? error.message
-        : "network error";
-    throw new AppError(
-      "EXTERNAL_ERROR",
-      `Could not reach Nhost Auth (${detail}). Try again shortly.`,
-      503
-    );
+  const maxAttempts = 3;
+  let lastError: unknown;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      const res = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "application/json",
+        },
+        body: JSON.stringify({ email, password }),
+        cache: "no-store",
+        // Fail hung TLS/connect attempts so the retry loop can recover.
+        signal: AbortSignal.timeout(12_000),
+      });
+
+      let body: NhostSessionBody = {};
+      try {
+        body = (await res.json()) as NhostSessionBody;
+      } catch {
+        body = {};
+      }
+      return { status: res.status, body };
+    } catch (error) {
+      lastError = error;
+      const transient = isTransientNhostFetchError(error);
+      console.error(
+        `[nhost-auth] ${path} attempt ${attempt}/${maxAttempts} failed:`,
+        error instanceof Error ? error.message : error,
+        error instanceof Error && "cause" in error
+          ? (error as Error & { cause?: unknown }).cause
+          : undefined
+      );
+      if (!transient || attempt >= maxAttempts) {
+        break;
+      }
+      await sleep(200 * attempt);
+    }
   }
 
-  let body: NhostSessionBody = {};
-  try {
-    body = (await res.json()) as NhostSessionBody;
-  } catch {
-    body = {};
-  }
-  return { status: res.status, body };
+  throw new AppError(
+    "EXTERNAL_ERROR",
+    `Could not reach Nhost Auth (${publicNhostNetworkDetail(lastError)}). Try again shortly.`,
+    503
+  );
 }
 
 /**

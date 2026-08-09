@@ -151,17 +151,59 @@ describe("nhostEmailPasswordSignup", () => {
 
   it("Case D: network failure to Nhost becomes a clear 503", async () => {
     stubNhostEnv();
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockRejectedValue(new TypeError("Failed to fetch"))
-    );
+    const fetchMock = vi
+      .fn()
+      .mockRejectedValue(new TypeError("fetch failed"));
+    vi.stubGlobal("fetch", fetchMock);
 
     await expect(
       nhostEmailPasswordSignup("eval@example.com", "password123")
     ).rejects.toMatchObject({
       status: 503,
-      publicMessage: expect.stringMatching(/Could not reach Nhost Auth/i),
+      publicMessage: expect.stringMatching(
+        /Could not reach Nhost Auth \(temporary network error\)/i
+      ),
     });
+    // Transient undici failures are retried a few times before surfacing.
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+
+  it("retries transient Nhost fetch failures then succeeds", async () => {
+    stubNhostEnv();
+    const alice = DEMO_USERS["alice@org-a.demo"];
+    const token = await signDemoJwt(alice.id, alice.email);
+    const fetchMock = vi
+      .fn()
+      .mockRejectedValueOnce(new TypeError("fetch failed"))
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            session: {
+              accessToken: token,
+              user: {
+                id: alice.id,
+                email: alice.email,
+                displayName: "Alice",
+              },
+            },
+          }),
+          { status: 200 }
+        )
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    query
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({
+        rows: [{ org_id: DEFAULT_EVALUATOR_ORG_ID, role: "owner" }],
+      });
+
+    const result = await nhostEmailPasswordSignup(
+      alice.email,
+      "password123"
+    );
+    expect(result.kind).toBe("authenticated");
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 });
 
