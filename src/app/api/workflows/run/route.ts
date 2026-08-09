@@ -1,24 +1,35 @@
 import { z } from "zod";
-import { parseHasuraAction } from "@/lib/auth/request-auth";
+import { requireUserFromRequest } from "@/lib/auth/request-auth";
 import { AppError, jsonError } from "@/lib/errors";
 import type { JsonObject } from "@/lib/types";
 import { triggerManualWorkflowRun } from "@/lib/workflows/manual-trigger";
 
 export const runtime = "nodejs";
 
-const inputSchema = z.object({
+/**
+ * Browser → Vercel manual run (JWT only).
+ *
+ * Prefer this over the Hasura Action path for the UI so runs do not depend on
+ * Action metadata consistency or Authorization header forwarding from Hasura.
+ * Membership is still enforced via org_members in Postgres.
+ */
+const bodySchema = z.object({
   workflow_id: z.string().uuid(),
   input: z.record(z.string(), z.unknown()).optional(),
 });
 
 export async function POST(req: Request) {
   try {
-    const { payload, user } = await parseHasuraAction<{
-      workflow_id: string;
-      input?: Record<string, unknown>;
-    }>(req);
+    const user = await requireUserFromRequest(req);
 
-    const parsed = inputSchema.safeParse(payload.input);
+    let json: unknown;
+    try {
+      json = await req.json();
+    } catch {
+      throw new AppError("VALIDATION_ERROR", "Invalid JSON body", 400);
+    }
+
+    const parsed = bodySchema.safeParse(json);
     if (!parsed.success) {
       throw new AppError("VALIDATION_ERROR", "workflow_id must be a UUID", 400);
     }

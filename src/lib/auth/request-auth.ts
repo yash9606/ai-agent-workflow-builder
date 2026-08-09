@@ -87,6 +87,55 @@ export async function requireUserFromRequest(
   return user;
 }
 
+/**
+ * Resolve the acting user for a Hasura Action webhook.
+ * Prefer a forwarded Bearer JWT. If Hasura verified the client JWT but did not
+ * forward Authorization, fall back to session_variables only when the Action
+ * shared secret has already proven the caller is Hasura.
+ */
+export async function resolveHasuraActionUser(
+  req: Request,
+  sessionVariables: Record<string, string | undefined> | undefined,
+  options: { actionSecretVerified: boolean }
+): Promise<HasuraJwtClaims> {
+  const token = extractBearerToken(req);
+  if (token) {
+    return requireUserFromRequest(req, sessionVariables);
+  }
+
+  if (!options.actionSecretVerified) {
+    throw new AppError("UNAUTHORIZED", "Authentication required", 401);
+  }
+
+  const userId =
+    sessionVariables?.["x-hasura-user-id"] ||
+    sessionVariables?.["X-Hasura-User-Id"];
+  if (!userId) {
+    throw new AppError("UNAUTHORIZED", "Authentication required", 401);
+  }
+
+  const defaultRole =
+    sessionVariables?.["x-hasura-default-role"] ||
+    sessionVariables?.["X-Hasura-Default-Role"] ||
+    "user";
+  const allowedRaw =
+    sessionVariables?.["x-hasura-allowed-roles"] ||
+    sessionVariables?.["X-Hasura-Allowed-Roles"];
+  const allowedRoles = allowedRaw
+    ? allowedRaw
+        .replace(/^\{|\}$/g, "")
+        .split(",")
+        .map((r) => r.trim())
+        .filter(Boolean)
+    : [defaultRole];
+
+  return {
+    userId,
+    defaultRole,
+    allowedRoles,
+  };
+}
+
 export async function parseHasuraAction<TInput>(
   req: Request,
   options?: { requireActionSecret?: boolean }
@@ -103,7 +152,9 @@ export async function parseHasuraAction<TInput>(
     throw new AppError("VALIDATION_ERROR", "Invalid JSON body", 400);
   }
 
-  const user = await requireUserFromRequest(req, payload.session_variables);
+  const user = await resolveHasuraActionUser(req, payload.session_variables, {
+    actionSecretVerified: requireSecret,
+  });
   return { payload, user };
 }
 

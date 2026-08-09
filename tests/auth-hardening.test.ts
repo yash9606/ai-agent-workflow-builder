@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { clearEnvCache } from "@/lib/env";
 import {
   requireUserFromRequest,
+  resolveHasuraActionUser,
   safeEqualSecret,
   verifyHasuraActionSecret,
   verifyCronSecret,
@@ -40,6 +41,31 @@ describe("auth hardening", () => {
         "x-hasura-user-id": alice,
       })
     ).rejects.toThrow(/Authentication required/i);
+  });
+
+  it("rejects Action session_variables fallback without verified action secret", async () => {
+    const alice = DEMO_USERS["alice@org-a.demo"].id;
+    await expect(
+      resolveHasuraActionUser(
+        req({}),
+        { "x-hasura-user-id": alice },
+        { actionSecretVerified: false }
+      )
+    ).rejects.toThrow(/Authentication required/i);
+  });
+
+  it("allows Action session_variables only after action secret is verified", async () => {
+    const alice = DEMO_USERS["alice@org-a.demo"].id;
+    const user = await resolveHasuraActionUser(
+      req({}),
+      {
+        "x-hasura-user-id": alice,
+        "x-hasura-default-role": "user",
+        "x-hasura-allowed-roles": "user",
+      },
+      { actionSecretVerified: true }
+    );
+    expect(user.userId).toBe(alice);
   });
 
   it("rejects JWT / session_variables user mismatch", async () => {

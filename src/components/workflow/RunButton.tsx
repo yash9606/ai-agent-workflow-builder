@@ -3,13 +3,18 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth, useOrg } from "@/components/providers/AppProviders";
-import { gqlRequest } from "@/lib/graphql/client";
-import { TRIGGER_WORKFLOW_RUN } from "@/lib/graphql/operations";
 
 type Props = {
   workflowId: string;
   disabled?: boolean;
   quotaExhausted?: boolean;
+};
+
+type RunResponse = {
+  id?: string;
+  status?: string;
+  workflow_id?: string;
+  message?: string;
 };
 
 export function RunButton({ workflowId, disabled, quotaExhausted }: Props) {
@@ -28,30 +33,42 @@ export function RunButton({ workflowId, disabled, quotaExhausted }: Props) {
     setBusy(true);
     setError(null);
     try {
-      const data = await gqlRequest<{
-        triggerWorkflowRun: {
-          id: string;
-          status: string;
-          workflow_id: string;
-          message: string;
-        };
-      }>(
-        TRIGGER_WORKFLOW_RUN,
-        { workflow_id: workflowId },
-        session.accessToken
-      );
-      router.push(
-        `/workflows/${workflowId}/run/${data.triggerWorkflowRun.id}`
-      );
+      // Call Vercel directly with the user JWT. Do not go through Hasura Actions
+      // for UI runs — Action metadata/env issues surface as misleading "not found".
+      const res = await fetch("/api/workflows/run", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session.accessToken}`,
+        },
+        body: JSON.stringify({ workflow_id: workflowId }),
+      });
+
+      const data = (await res.json().catch(() => ({}))) as RunResponse;
+      if (!res.ok) {
+        throw new Error(data.message || `Run failed (${res.status})`);
+      }
+      if (!data.id) {
+        throw new Error("Run failed: missing run id");
+      }
+
+      router.push(`/workflows/${workflowId}/run/${data.id}`);
     } catch (err) {
       const message =
         err instanceof Error ? err.message : "Failed to start run";
       const lower = message.toLowerCase();
       if (lower.includes("quota")) {
         setError("Run failed: quota exhausted");
-      } else if (lower.includes("forbidden") || lower.includes("not allowed")) {
+      } else if (
+        lower.includes("forbidden") ||
+        lower.includes("not allowed") ||
+        lower.includes("unauthorized")
+      ) {
         setError("Run failed: unauthorized for this workflow");
-      } else if (lower.includes("not found")) {
+      } else if (
+        lower.includes("workflow not found") ||
+        lower.includes("not a member")
+      ) {
         setError("Run failed: workflow not found or inaccessible");
       } else if (lower.includes("active") || lower.includes("invalid")) {
         setError(`Run failed: ${message}`);
