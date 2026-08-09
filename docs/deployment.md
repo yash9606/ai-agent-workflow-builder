@@ -35,7 +35,7 @@ Production must use `https` HTTP so derived subscriptions are `wss://`, or set `
    - subdomain / region → `NEXT_PUBLIC_NHOST_*`
    - Postgres connection string → `DATABASE_URL`
    - GraphQL endpoint → `NEXT_PUBLIC_HASURA_GRAPHQL_URL`
-   - JWT secret (Hasura config) → `HASURA_JWT_SECRET` (or configure `NHOST_JWT_JWKS_URL` for RS256)
+   - JWT verify: for **RS256** Nhost projects set `NHOST_JWT_JWKS_URL` (or rely on subdomain/region auto JWKS) / optional `NHOST_JWT_PUBLIC_KEY`. Use `HASURA_JWT_SECRET` only for **HS256** / local demo.
 3. Enable email/password Auth as required by your demo.
 
 ## 3. Hasura migrations & metadata
@@ -115,15 +115,16 @@ Demo personas (Alice/Bob/…) are **local only**. In production:
 | Variable | Notes |
 | --- | --- |
 | `DATABASE_URL` | Nhost Postgres |
-| `HASURA_JWT_SECRET` | Must verify Nhost JWTs |
+| `AUTH_MODE` | `nhost` |
+| `NHOST_JWT_JWKS_URL` | **RS256 (recommended):** `https://<subdomain>.auth.<region>.nhost.run/v1/.well-known/jwks.json` — or omit and let the app auto-derive from `NEXT_PUBLIC_NHOST_*` |
+| `NHOST_JWT_PUBLIC_KEY` | Optional RS256 PEM public key fallback (never the private key) |
+| `HASURA_JWT_SECRET` | **HS256 only** (local demo / symmetric). Do not put RS256 private/public PEM here |
 | `HASURA_ADMIN_SECRET` | Optional; never expose to client |
 | `ACTION_SHARED_SECRET` | Same as Hasura |
 | `HASURA_EVENT_SECRET` | Same as Hasura |
 | `CRON_SECRET` | Same as Hasura |
-| `AUTH_MODE` | `nhost` |
 | `LLM_PROVIDER` / `LLM_API_KEY` / `LLM_MODEL` | Real provider or leave stub |
 | `NOTIFY_WEBHOOK_URL` | Optional Slack/webhook URL |
-| `NHOST_JWT_JWKS_URL` | If using RS256 |
 
 `VERCEL_ENV=production` + Nhost public env vars force Nhost auth (demo personas disabled) via `resolveAuthMode()`.
 

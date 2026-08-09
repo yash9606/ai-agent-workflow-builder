@@ -314,7 +314,7 @@ On a brand-new empty project, the simplest recovery if apply fails mid-way is: i
 
 1. **Now (this doc):** Apply migrations + metadata to Nhost (Path A).  
 2. Set Hasura env vars (`ACTION_*`, event/cron secrets).  
-3. Deploy Next.js to Vercel with `AUTH_MODE=nhost`, `NEXT_PUBLIC_NHOST_SUBDOMAIN=bfwuoawsybivkgdvkyah`, `NEXT_PUBLIC_NHOST_REGION=ap-south-1`, GraphQL HTTPS/WSS URLs, `DATABASE_URL`, JWT secret alignment.  
+3. Deploy Next.js to Vercel with `AUTH_MODE=nhost`, `NEXT_PUBLIC_NHOST_SUBDOMAIN=bfwuoawsybivkgdvkyah`, `NEXT_PUBLIC_NHOST_REGION=ap-south-1`, GraphQL HTTPS/WSS URLs, `DATABASE_URL`, and RS256 JWT verify (`NHOST_JWT_JWKS_URL` or auto JWKS from subdomain/region — not HS256 `HASURA_JWT_SECRET`).  
 4. Point `ACTION_BASE_URL` at the Vercel HTTPS origin.  
 5. Map `org_members` for real Nhost users.  
 6. Run production smoke tests (login, run, approval, webhook, Org B denial).

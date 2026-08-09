@@ -114,7 +114,7 @@ export default function LoginPage() {
       });
       if (!me.ok) {
         throw new Error(
-          "Nhost token was issued but is not accepted by this app/Hasura JWT config. Set HASURA_JWT_SECRET to the Nhost JWT key."
+          "Nhost token was issued but is not accepted by this app JWT config. For RS256 Nhost projects set NHOST_JWT_JWKS_URL (or rely on subdomain/region auto JWKS) or NHOST_JWT_PUBLIC_KEY — do not use HASURA_JWT_SECRET (HS256) for asymmetric keys."
         );
       }
       const meJson = (await me.json()) as { user?: { id?: string } };

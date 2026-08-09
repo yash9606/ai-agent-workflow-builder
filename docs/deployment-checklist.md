@@ -20,7 +20,7 @@ Use this after code is on GitHub. Do **not** commit real secrets — set them on
 - [ ] GraphQL HTTP URL → `NEXT_PUBLIC_HASURA_GRAPHQL_URL` (`https://…/v1/graphql`)
 - [ ] Optional independent WSS URL → `NEXT_PUBLIC_HASURA_WS_URL` (`wss://…/v1/graphql`)
 - [ ] If WS unset: confirm HTTP is `https://` so client derives `wss://`
-- [ ] JWT secret aligned → `HASURA_JWT_SECRET` (or `NHOST_JWT_JWKS_URL` for RS256)
+- [ ] JWT verify aligned: RS256 → `NHOST_JWT_JWKS_URL` (or auto from subdomain/region) / optional `NHOST_JWT_PUBLIC_KEY`; HS256 only → `HASURA_JWT_SECRET`
 - [ ] Admin secret kept SERVER-ONLY (console only; never `NEXT_PUBLIC_*`)
 
 ## Migrations
@@ -60,7 +60,7 @@ Use this after code is on GitHub. Do **not** commit real secrets — set them on
 
 - [ ] `AUTH_MODE=nhost`
 - [ ] `DATABASE_URL`
-- [ ] `HASURA_JWT_SECRET` (and/or `NHOST_JWT_JWKS_URL`)
+- [ ] `NHOST_JWT_JWKS_URL` (RS256) and/or `NHOST_JWT_PUBLIC_KEY`; `HASURA_JWT_SECRET` only if HS256
 - [ ] `ACTION_SHARED_SECRET`
 - [ ] `HASURA_EVENT_SECRET`
 - [ ] `CRON_SECRET`

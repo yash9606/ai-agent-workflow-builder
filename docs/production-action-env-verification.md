@@ -72,8 +72,9 @@ Configure Hasura `ACTION_BASE_URL` **after** the Vercel production URL is known 
 | `HASURA_EVENT_SECRET` | **Nhost/Hasura** + **Vercel** (identical) | Server-only secret | **Yes** (production assert + events) | Auth for `/api/events/notify` and `/api/events/database-event` (`X-Hasura-Event-Secret`) | Long random; match both sides | Required; confirm both sides |
 | `CRON_SECRET` | **Nhost/Hasura** + **Vercel** (identical) | Server-only secret | **Yes** | Auth for `/api/events/scheduled` (`X-Cron-Secret`) | Long random; match both sides | Required; confirm both sides |
 | `DATABASE_URL` | **Vercel** | Server-only secret | **Yes** (executor + all handlers) | Postgres pool for quota, runs, steps, webhook lookup | Nhost Postgres URL (`postgres://…` / `postgresql://…`); **not** localhost | Required on Vercel |
-| `HASURA_JWT_SECRET` | **Vercel** (must align with Nhost/Hasura JWT config) | Server-only secret | **Yes** in production (`assertProductionEnvSafety`) | Verify Bearer JWTs on Actions (`triggerWorkflowRun`, `approveStep`) | Plain HS256 key string, or JSON `{"type":"HS256","key":"…"}` (parser extracts `.key`) | Required for Action user auth |
-| `NHOST_JWT_JWKS_URL` | **Vercel** (optional) | Server-only (URL, not a password) | Optional if RS256/JWKS | Prefer JWKS verify when Nhost issues RS256 | `https://<subdomain>.auth.<region>.nhost.run/v1/jwks` | Optional; HS256 secret path still needs `HASURA_JWT_SECRET` set for prod assert |
+| `NHOST_JWT_JWKS_URL` | **Vercel** | Server-only (URL) | **Yes for RS256** (or omit if subdomain/region auto-derive) | Verify Nhost RS256 Bearer JWTs | `https://<subdomain>.auth.<region>.nhost.run/v1/.well-known/jwks.json` | Preferred for current Nhost RS256 |
+| `NHOST_JWT_PUBLIC_KEY` | **Vercel** | Server-only (public PEM) | Optional RS256 fallback | Verify with SPKI public key | PEM `BEGIN PUBLIC KEY` only — never private key | Optional |
+| `HASURA_JWT_SECRET` | **Vercel** | Server-only secret | Yes for HS256/demo only | Local demo signing + symmetric verify | Plain HS256 key or Hasura JSON `{"type":"HS256","key":"…"}` | Do **not** use for RS256 |
 | `NEXT_PUBLIC_HASURA_GRAPHQL_URL` | **Vercel** | Browser-public | **Yes** | Browser GraphQL HTTP | `https://bfwuoawsybivkgdvkyah.hasura.ap-south-1.nhost.run/v1/graphql` | App/UI; not Action handler URL |
 | `NEXT_PUBLIC_HASURA_WS_URL` | **Vercel** | Browser-public | Recommended if WS host differs; else derived from HTTPS HTTP URL | Subscriptions | `wss://…/v1/graphql` | UI live updates |
 | `HASURA_GRAPHQL_URL` | **Vercel** (optional) | Server-only | Optional | Server GraphQL override | Same HTTPS GraphQL URL as public if set | Optional |
@@ -100,7 +101,7 @@ Configure Hasura `ACTION_BASE_URL` **after** the Vercel production URL is known 
 | Need | Variables |
 | --- | --- |
 | Hasura can call handler | Hasura: `ACTION_BASE_URL`, `ACTION_SHARED_SECRET` |
-| Handler accepts call | Vercel: `ACTION_SHARED_SECRET` (match), `HASURA_JWT_SECRET` (+ optional JWKS), `DATABASE_URL` |
+| Handler accepts call | Vercel: `ACTION_SHARED_SECRET` (match), RS256 JWKS/public key or HS256 secret, `DATABASE_URL` |
 | JWT forwarded | Metadata `forward_client_headers: true` (already in metadata) |
 
 ### Webhook handler (`triggerWorkflowWebhook` + `/api/webhooks/[pathToken]`)

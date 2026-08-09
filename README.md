@@ -162,9 +162,12 @@ NEXT_PUBLIC_NHOST_SUBDOMAIN=<your-subdomain>
 NEXT_PUBLIC_NHOST_REGION=<region>
 NEXT_PUBLIC_HASURA_GRAPHQL_URL=https://<nhost-or-hasura>/v1/graphql
 HASURA_GRAPHQL_URL=https://<nhost-or-hasura>/v1/graphql
-HASURA_JWT_SECRET=<Nhost JWT secret — must match Hasura’s JWT config>
-# Optional if your project uses JWKS/RS256:
-# NHOST_JWT_JWKS_URL=https://.../.well-known/jwks.json
+# RS256 (current Nhost asymmetric default): JWKS preferred
+NHOST_JWT_JWKS_URL=https://<subdomain>.auth.<region>.nhost.run/v1/.well-known/jwks.json
+# Or omit JWKS URL — auto-derived from NEXT_PUBLIC_NHOST_* in production/nhost mode
+# Optional: NHOST_JWT_PUBLIC_KEY=<PEM public key only>
+# HS256 only (local demo / symmetric Nhost):
+# HASURA_JWT_SECRET=<symmetric key matching Hasura>
 DATABASE_URL=<Nhost Postgres>
 ```
 
@@ -216,11 +219,12 @@ Copy `.env.example` → `.env.local` for Next.js.
 | `AUTH_MODE` | — | ✓ | `demo` (local) or `nhost` (production) |
 | `ALLOW_DEMO_AUTH` | — | ✓ | `true` keeps demo on Vercel production (avoid) |
 | `FORCE_NHOST_AUTH` | — | ✓ | `true` forces Nhost when subdomain/region set |
-| `NHOST_JWT_JWKS_URL` | — | ✓ | Optional JWKS for RS256 Nhost tokens |
+| `NHOST_JWT_JWKS_URL` | — | ✓ | RS256 JWKS (or auto from subdomain/region) |
+| `NHOST_JWT_PUBLIC_KEY` | — | ✓ | Optional RS256 PEM public key |
 | `DATABASE_URL` | — | ✓ | Executor Postgres pool |
 | `HASURA_GRAPHQL_URL` | — | ✓ | Server GraphQL override |
 | `HASURA_ADMIN_SECRET` | — | ✓ | Admin operations if needed |
-| `HASURA_JWT_SECRET` | — | ✓ | Sign/verify demo JWTs |
+| `HASURA_JWT_SECRET` | — | ✓ | HS256 demo / symmetric only |
 | `ACTION_BASE_URL` | — | Docker/Hasura | Action/event webhook base |
 | `ACTION_SHARED_SECRET` | — | ✓ | Optional Action header check |
 | `HASURA_EVENT_SECRET` | — | ✓ | Optional event header check |

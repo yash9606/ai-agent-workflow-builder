@@ -24,8 +24,13 @@ const envSchema = z.object({
   AUTH_MODE: z.enum(["nhost", "demo"]).default("demo"),
   NEXT_PUBLIC_NHOST_SUBDOMAIN: z.string().optional(),
   NEXT_PUBLIC_NHOST_REGION: z.string().optional(),
-  /** Optional JWKS URL for Nhost/RS256 tokens (overrides HS256 secret verify). */
+  /** Optional JWKS URL for Nhost/RS256 tokens (preferred over HS256). */
   NHOST_JWT_JWKS_URL: z.string().optional(),
+  /**
+   * Optional Nhost RS256 public key (PEM). Use when JWKS URL is unavailable.
+   * Never put the private key in Vercel.
+   */
+  NHOST_JWT_PUBLIC_KEY: z.string().optional(),
   DEMO_AUTH_PASSWORD: z.string().default("demo-password"),
   CRON_SECRET: z.string().default("local-cron-secret"),
   HASURA_EVENT_SECRET: z.string().default("local-event-secret"),
@@ -92,8 +97,18 @@ export function assertProductionEnvSafety(): void {
       "NEXT_PUBLIC_HASURA_GRAPHQL_URL (or HASURA_GRAPHQL_URL) must be the production Hasura/Nhost GraphQL URL"
     );
   }
-  if (!process.env.HASURA_JWT_SECRET?.trim()) {
-    problems.push("HASURA_JWT_SECRET must be set to the Nhost/Hasura JWT key");
+  // JWT verify: RS256 (JWKS / public key / auto JWKS) OR HS256 secret.
+  const hasHs256 = Boolean(process.env.HASURA_JWT_SECRET?.trim());
+  const hasJwks = Boolean(process.env.NHOST_JWT_JWKS_URL?.trim());
+  const hasPublicKey = Boolean(process.env.NHOST_JWT_PUBLIC_KEY?.trim());
+  const canAutoJwks = Boolean(
+    process.env.NEXT_PUBLIC_NHOST_SUBDOMAIN?.trim() &&
+      process.env.NEXT_PUBLIC_NHOST_REGION?.trim()
+  );
+  if (!hasHs256 && !hasJwks && !hasPublicKey && !canAutoJwks) {
+    problems.push(
+      "Configure Nhost RS256 via NHOST_JWT_JWKS_URL (or subdomain/region for auto JWKS) or NHOST_JWT_PUBLIC_KEY, or HS256 via HASURA_JWT_SECRET"
+    );
   }
   if (!process.env.ACTION_SHARED_SECRET?.trim()) {
     problems.push("ACTION_SHARED_SECRET must be set");
@@ -162,6 +177,7 @@ export function getEnv(): ServerEnv {
     NEXT_PUBLIC_NHOST_SUBDOMAIN: process.env.NEXT_PUBLIC_NHOST_SUBDOMAIN,
     NEXT_PUBLIC_NHOST_REGION: process.env.NEXT_PUBLIC_NHOST_REGION,
     NHOST_JWT_JWKS_URL: process.env.NHOST_JWT_JWKS_URL || undefined,
+    NHOST_JWT_PUBLIC_KEY: process.env.NHOST_JWT_PUBLIC_KEY || undefined,
     DEMO_AUTH_PASSWORD: process.env.DEMO_AUTH_PASSWORD,
     CRON_SECRET: process.env.CRON_SECRET,
     HASURA_EVENT_SECRET: process.env.HASURA_EVENT_SECRET,
