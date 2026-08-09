@@ -4,7 +4,11 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/components/providers/AppProviders";
 import { DEMO_PERSONAS, type DemoPersona } from "@/lib/auth/session";
-import { getNhostClient } from "@/lib/nhost/client";
+import {
+  ACCOUNT_EXISTS_MESSAGE,
+  EVALUATOR_VERIFY_EMAIL_MESSAGE,
+  formatBrowserNetworkError,
+} from "@/lib/nhost/auth-messages";
 
 type AuthModeResponse = {
   mode: "demo" | "nhost";
@@ -13,12 +17,21 @@ type AuthModeResponse = {
   productionNhostForced: boolean;
 };
 
+type NhostAuthJson = {
+  ok?: boolean;
+  needsEmailVerification?: boolean;
+  accessToken?: string;
+  message?: string;
+  user?: { id: string; email: string; displayName: string };
+};
+
 export default function LoginPage() {
   const { session, ready, login } = useAuth();
   const router = useRouter();
   const [modeInfo, setModeInfo] = useState<AuthModeResponse | null>(null);
   const [busyEmail, setBusyEmail] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [info, setInfo] = useState<string | null>(null);
   const [nhostEmail, setNhostEmail] = useState("");
   const [nhostPassword, setNhostPassword] = useState("");
   const [nhostBusy, setNhostBusy] = useState(false);
@@ -51,6 +64,7 @@ export default function LoginPage() {
     }
     setBusyEmail(persona.email);
     setError(null);
+    setInfo(null);
     try {
       const res = await fetch("/api/auth/demo-login", {
         method: "POST",
@@ -79,57 +93,10 @@ export default function LoginPage() {
       });
       router.replace("/dashboard");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Demo login failed");
+      setError(formatBrowserNetworkError(err, "Demo login failed"));
     } finally {
       setBusyEmail(null);
     }
-  }
-
-  async function completeNhostSession(accessToken: string, user: {
-    id: string;
-    email?: string | null;
-    displayName?: string | null;
-  }) {
-    // Server verifies JWT and provisions Organization A owner if the user
-    // has no org_members row yet (idempotent; never trusts client user ids).
-    const me = await fetch("/api/auth/me", {
-      headers: { Authorization: `Bearer ${accessToken}` },
-    });
-    const meJson = (await me.json()) as {
-      user?: { id?: string };
-      memberships?: { org_id: string; role: string }[];
-      message?: string;
-    };
-    if (!me.ok) {
-      if (me.status === 401) {
-        throw new Error(
-          "Nhost token was issued but is not accepted by this app JWT config. For RS256 Nhost projects set NHOST_JWT_JWKS_URL (or rely on subdomain/region auto JWKS) or NHOST_JWT_PUBLIC_KEY — do not use HASURA_JWT_SECRET (HS256) for asymmetric keys."
-        );
-      }
-      throw new Error(
-        meJson.message ||
-          "Signed in, but organization membership could not be provisioned. Try again or contact the project owner."
-      );
-    }
-    if (meJson.user?.id && meJson.user.id !== user.id) {
-      throw new Error("Token subject does not match Nhost user id");
-    }
-    if (!meJson.memberships?.length) {
-      throw new Error(
-        "Signed in, but no organization membership is available. Provisioning may have failed."
-      );
-    }
-
-    login({
-      accessToken,
-      authProvider: "nhost",
-      user: {
-        id: user.id,
-        email: user.email || nhostEmail,
-        displayName: user.displayName || user.email || "Nhost user",
-      },
-    });
-    router.replace("/dashboard");
   }
 
   async function handleNhostAuth(e: React.FormEvent) {
@@ -140,42 +107,98 @@ export default function LoginPage() {
     }
     setNhostBusy(true);
     setError(null);
+    setInfo(null);
     try {
-      const nhost = getNhostClient();
-      const response =
+      // Same-origin proxy — avoids browser→Nhost cross-origin "Failed to fetch".
+      const endpoint =
         nhostMode === "signup"
-          ? await nhost.auth.signUpEmailPassword({
-              email: nhostEmail,
-              password: nhostPassword,
-            })
-          : await nhost.auth.signInEmailPassword({
-              email: nhostEmail,
-              password: nhostPassword,
-            });
+          ? "/api/auth/nhost/signup"
+          : "/api/auth/nhost/signin";
+      const res = await fetch(endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: nhostEmail.trim(),
+          password: nhostPassword,
+        }),
+      });
 
-      const accessToken = response.body?.session?.accessToken;
-      const user = response.body?.session?.user;
-      if (!accessToken || !user?.id) {
-        if (nhostMode === "signup") {
-          throw new Error(
-            "Sign-up succeeded but no session was returned. If email verification is required, confirm your email, then sign in — membership is provisioned on first authenticated /api/auth/me call."
-          );
-        }
-        throw new Error(
-          response.body
-            ? "Nhost sign-in failed — check email/password"
-            : "Nhost sign-in failed"
-        );
+      let json: NhostAuthJson = {};
+      try {
+        json = (await res.json()) as NhostAuthJson;
+      } catch {
+        json = {};
       }
 
-      await completeNhostSession(accessToken, user);
+      // Case B: signup OK, email verification required — do not treat as auth.
+      if (
+        nhostMode === "signup" &&
+        res.ok &&
+        json.needsEmailVerification
+      ) {
+        setInfo(json.message || EVALUATOR_VERIFY_EMAIL_MESSAGE);
+        setNhostMode("signin");
+        return;
+      }
+
+      if (!res.ok) {
+        if (res.status === 409) {
+          setError(json.message || ACCOUNT_EXISTS_MESSAGE);
+          setNhostMode("signin");
+          return;
+        }
+        if (res.status === 503) {
+          setError(
+            json.message ||
+              "Signed in, but organization membership could not be provisioned. Try again or contact the project owner."
+          );
+          return;
+        }
+        if (res.status === 401) {
+          setError(json.message || "Invalid email or password.");
+          return;
+        }
+        setError(
+          json.message ||
+            (nhostMode === "signup"
+              ? "Nhost sign-up failed"
+              : "Nhost sign-in failed")
+        );
+        return;
+      }
+
+      if (!json.accessToken || !json.user?.id) {
+        setError(
+          nhostMode === "signup"
+            ? EVALUATOR_VERIFY_EMAIL_MESSAGE
+            : "Sign-in failed — no authenticated session was returned."
+        );
+        if (nhostMode === "signup") {
+          setInfo(EVALUATOR_VERIFY_EMAIL_MESSAGE);
+          setError(null);
+          setNhostMode("signin");
+        }
+        return;
+      }
+
+      // Server already verified JWT + provisioned membership (when needed).
+      login({
+        accessToken: json.accessToken,
+        authProvider: "nhost",
+        user: {
+          id: json.user.id,
+          email: json.user.email || nhostEmail,
+          displayName:
+            json.user.displayName || json.user.email || nhostEmail || "Nhost user",
+        },
+      });
+      router.replace("/dashboard");
     } catch (err) {
       setError(
-        err instanceof Error
-          ? err.message
-          : nhostMode === "signup"
-            ? "Nhost sign-up failed"
-            : "Nhost login failed"
+        formatBrowserNetworkError(
+          err,
+          nhostMode === "signup" ? "Nhost sign-up failed" : "Nhost login failed"
+        )
       );
     } finally {
       setNhostBusy(false);
@@ -209,6 +232,7 @@ export default function LoginPage() {
         )}
 
         {error ? <div className="alert alert-error">{error}</div> : null}
+        {info ? <div className="alert alert-success">{info}</div> : null}
 
         {showDemo ? (
           <>
@@ -246,10 +270,9 @@ export default function LoginPage() {
           >
             <h2 className="section-title">Nhost email / password</h2>
             <p className="muted">
-              Production path: Nhost Auth issues the JWT. On first authenticated
-              session, the server provisions Organization A membership (role{" "}
-              <code>owner</code>) for your real Nhost user id via{" "}
-              <code>/api/auth/me</code>.
+              Production path: create an account or sign in. After Nhost issues a
+              JWT, the server verifies it and provisions Organization A membership
+              (role <code>owner</code>) on first authenticated session only.
             </p>
             <div className="login-grid" style={{ marginBottom: "0.75rem" }}>
               <button
@@ -257,7 +280,10 @@ export default function LoginPage() {
                 className={
                   nhostMode === "signin" ? "btn btn-primary" : "btn btn-ghost"
                 }
-                onClick={() => setNhostMode("signin")}
+                onClick={() => {
+                  setNhostMode("signin");
+                  setError(null);
+                }}
                 disabled={nhostBusy}
               >
                 Sign in
@@ -267,7 +293,10 @@ export default function LoginPage() {
                 className={
                   nhostMode === "signup" ? "btn btn-primary" : "btn btn-ghost"
                 }
-                onClick={() => setNhostMode("signup")}
+                onClick={() => {
+                  setNhostMode("signup");
+                  setError(null);
+                }}
                 disabled={nhostBusy}
               >
                 Sign up
@@ -290,6 +319,7 @@ export default function LoginPage() {
                 value={nhostPassword}
                 onChange={(e) => setNhostPassword(e.target.value)}
                 required
+                minLength={nhostMode === "signup" ? 8 : 1}
                 autoComplete={
                   nhostMode === "signup" ? "new-password" : "current-password"
                 }
