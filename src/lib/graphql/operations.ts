@@ -217,33 +217,6 @@ export const GET_USAGE = /* GraphQL */ `
   }
 `;
 
-export const CREATE_WORKFLOW = /* GraphQL */ `
-  mutation CreateWorkflow(
-    $org_id: uuid!
-    $name: String!
-    $description: String!
-    $active: Boolean!
-  ) {
-    insert_workflows_one(
-      object: {
-        org_id: $org_id
-        name: $name
-        description: $description
-        active: $active
-      }
-    ) {
-      id
-      org_id
-      name
-      description
-      active
-      created_by
-      created_at
-      updated_at
-    }
-  }
-`;
-
 export const UPDATE_WORKFLOW = /* GraphQL */ `
   mutation UpdateWorkflow(
     $id: uuid!

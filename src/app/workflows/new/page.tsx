@@ -6,8 +6,7 @@ import { useRouter } from "next/navigation";
 import { RequireAuth } from "@/components/auth/RequireAuth";
 import { AppShell } from "@/components/layout/AppShell";
 import { useAuth, useOrg } from "@/components/providers/AppProviders";
-import { gqlRequest } from "@/lib/graphql/client";
-import { CREATE_WORKFLOW, INSERT_TRIGGER } from "@/lib/graphql/operations";
+import { formatBrowserNetworkError } from "@/lib/nhost/auth-messages";
 
 export default function NewWorkflowPage() {
   return (
@@ -45,39 +44,51 @@ function NewWorkflowContent() {
     setBusy(true);
     setError(null);
     try {
-      const data = await gqlRequest<{
-        insert_workflows_one: { id: string };
-      }>(
-        CREATE_WORKFLOW,
-        {
+      const res = await fetch("/api/workflows", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session.accessToken}`,
+        },
+        body: JSON.stringify({
           org_id: orgId,
           name: name.trim(),
           description: description.trim(),
           active,
-        },
-        session.accessToken
-      );
+        }),
+      });
 
-      const workflowId = data.insert_workflows_one.id;
-
+      let json: {
+        workflow?: { id: string };
+        message?: string;
+      } = {};
       try {
-        await gqlRequest(
-          INSERT_TRIGGER,
-          {
-            workflow_id: workflowId,
-            trigger_type: "manual",
-            config: {},
-            enabled: true,
-          },
-          session.accessToken
-        );
+        json = (await res.json()) as typeof json;
       } catch {
-        // Manual trigger is convenient but not required for creation.
+        json = {};
       }
 
-      router.push(`/workflows/${workflowId}`);
+      if (!res.ok || !json.workflow?.id) {
+        if (res.status === 401) {
+          throw new Error(json.message || "Authentication required");
+        }
+        if (res.status === 403) {
+          throw new Error(
+            json.message ||
+              "You do not have permission to create workflows in this organization."
+          );
+        }
+        if (res.status === 404) {
+          throw new Error(json.message || "Organization not found");
+        }
+        throw new Error(json.message || "Failed to create workflow");
+      }
+
+      router.push(`/workflows/${json.workflow.id}`);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to create workflow");
+      setError(
+        formatBrowserNetworkError(err, "Failed to create workflow")
+      );
       setBusy(false);
     }
   }
