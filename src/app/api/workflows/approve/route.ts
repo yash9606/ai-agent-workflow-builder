@@ -1,21 +1,31 @@
 import { z } from "zod";
-import { parseHasuraAction } from "@/lib/auth/request-auth";
+import { requireUserFromRequest } from "@/lib/auth/request-auth";
 import { AppError, jsonError } from "@/lib/errors";
 import { approvePausedStep } from "@/lib/workflows/approve-step";
 
 export const runtime = "nodejs";
 
-const inputSchema = z.object({
+/**
+ * Browser → Vercel approval (JWT only).
+ * Avoids the Hasura `approveStep` Action, which is not present on production
+ * mutation_root when Action metadata is inconsistent.
+ */
+const bodySchema = z.object({
   step_run_id: z.string().uuid(),
 });
 
 export async function POST(req: Request) {
   try {
-    const { payload, user } = await parseHasuraAction<{ step_run_id: string }>(
-      req
-    );
+    const user = await requireUserFromRequest(req);
 
-    const parsed = inputSchema.safeParse(payload.input);
+    let json: unknown;
+    try {
+      json = await req.json();
+    } catch {
+      throw new AppError("VALIDATION_ERROR", "Invalid JSON body", 400);
+    }
+
+    const parsed = bodySchema.safeParse(json);
     if (!parsed.success) {
       throw new AppError("VALIDATION_ERROR", "step_run_id must be a UUID", 400);
     }

@@ -423,17 +423,6 @@ export const TRIGGER_WORKFLOW_RUN = /* GraphQL */ `
   }
 `;
 
-export const APPROVE_STEP = /* GraphQL */ `
-  mutation ApproveStep($step_run_id: uuid!) {
-    approveStep(step_run_id: $step_run_id) {
-      id
-      status
-      workflow_id
-      message
-    }
-  }
-`;
-
 export const SUB_STEP_RUNS = /* GraphQL */ `
   subscription SubStepRuns($workflowRunId: uuid!) {
     step_runs(

@@ -359,8 +359,10 @@ There is **no separate backend process**. Executor, Actions, webhooks, and event
 | Route | Role |
 | --- | --- |
 | `POST /api/auth/demo-login` | Demo JWT issuance |
-| `POST /api/actions/trigger-workflow` | Hasura Action `triggerWorkflowRun` |
-| `POST /api/actions/approve-step` | Hasura Action `approveStep` |
+| `POST /api/workflows/run` | UI manual run (JWT Bearer; preferred in production) |
+| `POST /api/workflows/approve` | UI approval resume (JWT Bearer; preferred in production) |
+| `POST /api/actions/trigger-workflow` | Hasura Action `triggerWorkflowRun` (optional GraphQL path) |
+| `POST /api/actions/approve-step` | Hasura Action `approveStep` (optional GraphQL path) |
 | `POST /api/actions/trigger-webhook` | Hasura Action `triggerWorkflowWebhook` |
 | `POST /api/webhooks/[pathToken]` | Direct HTTP webhook |
 | `POST /api/events/database-event` | Hasura event on `watched_records` |
@@ -454,7 +456,7 @@ Sensitive step types and webhook triggers are restricted in Hasura permission ch
 
 1. Executor reaches `approval_gate` → step_run `paused`, workflow_run `paused`, execution stops.  
 2. UI receives pause via subscription (`LiveRunView`) and shows “Awaiting approval”.  
-3. Authorized user calls Hasura Action `approveStep(step_run_id)`.  
+3. Authorized user calls `POST /api/workflows/approve` with Bearer JWT and `step_run_id` (or Hasura Action `approveStep` when Actions are consistent).  
 4. Handler verifies JWT/session user, org membership, `allowed_roles` on the step config, paused state; records `approved_by` / `approved_at`.  
 5. `resumeWorkflowRun` continues from the next step.  
 6. Approval is idempotent if already approved.
@@ -513,7 +515,7 @@ With `docker compose up -d`, `.env.local` from `.env.example`, and `npm run dev`
 4. **Watch live updates** — open the run page; subscription should show LLM → HTTP → conditional → approval paused.  
 5. **Conditional path** — seeded prompt yields stub `POSITIVE`; branch label should show the positive path.  
 6. **Paused at approval** — UI shows awaiting approval; later steps not executed yet.  
-7. **Approve** — as Alice (or Bob); click Approve (`approveStep` Action).  
+7. **Approve** — as Alice (or Bob); click Approve (`POST /api/workflows/approve`).  
 8. **Resume without full page reload** — subscription moves run back to running then completed.  
 9. **Workflow completes** — notify step runs; run status `completed`.  
 10. **Webhook start** — without clicking Run:

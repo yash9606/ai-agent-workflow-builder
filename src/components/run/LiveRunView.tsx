@@ -6,7 +6,6 @@ import { QuotaBar } from "@/components/quota/QuotaBar";
 import { useAuth, useOrg } from "@/components/providers/AppProviders";
 import { gqlRequest, subscribeGraphql } from "@/lib/graphql/client";
 import {
-  APPROVE_STEP,
   GET_RUN_WITH_STEPS,
   GET_WORKFLOW,
   SUB_STEP_RUNS,
@@ -322,10 +321,23 @@ export function LiveRunView({ runId, workflowId }: Props) {
     setApproveMsg(null);
     setError(null);
     try {
-      const data = await gqlRequest<{
-        approveStep: { id: string; status: string; message: string };
-      }>(APPROVE_STEP, { step_run_id: stepRunId }, session.accessToken);
-      setApproveMsg(data.approveStep.message);
+      // Call Vercel directly with the user JWT (not Hasura approveStep Action).
+      const res = await fetch("/api/workflows/approve", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session.accessToken}`,
+        },
+        body: JSON.stringify({ step_run_id: stepRunId }),
+      });
+      const data = (await res.json().catch(() => ({}))) as {
+        message?: string;
+        status?: string;
+      };
+      if (!res.ok) {
+        throw new Error(data.message || `Approval failed (${res.status})`);
+      }
+      setApproveMsg(data.message || "Step approved; workflow resumed");
       await fetchOnce(session.accessToken);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Approval failed");
